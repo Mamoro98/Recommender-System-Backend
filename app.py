@@ -156,7 +156,7 @@ def recommend():
             details = fetch_movie_details(tmdb_movie_id)
             if details:
                 recommendations.append({
-                    "movieId": int(movie_info["movieId"]),
+                    "movieId": int(details["id"]),
                     "title": movie_info["title"],
                     "overview": details.get("overview", "No description available"),
                     "poster": f"{TMDB_IMAGE_BASE_URL}{details.get('poster_path')}" if details.get('poster_path') else "No Image Available",
