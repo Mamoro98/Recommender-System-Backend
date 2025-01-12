@@ -5,6 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 import pickle
 import requests
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -23,6 +24,16 @@ with open('./idx_to_movie.pkl', 'rb') as file:
 with open('./movie_to_idx.pkl', 'rb') as file:
     movie_to_idx = pickle.load(file)
 
+# with open('./user_latent.pkl', 'rb') as file:
+#     users_latent = pickle.load(file)
+# with open('./item_latent.pkl', 'rb') as file:
+#     movies_latent = pickle.load(file)
+# with open('./user_bias.pkl', 'rb') as file:
+#     users_biases = pickle.load(file)
+# with open('./item_bias.pkl', 'rb') as file:
+#     movies_biases = pickle.load(file)
+
+
 lambd = 0.5
 tau = 0.5
 gamma = 0.1
@@ -30,6 +41,7 @@ factors = 32
 
 
 movies = pd.read_csv("./movies.csv")
+titles = movies['title'].values
 
 # TMDb API Configuration
 TMDB_API_KEY = '918cce94627c68fa3cb45b04c4dc0691'  # Replace with your TMDb API Key
@@ -89,31 +101,36 @@ def fetch_movie_details(movie_id):
         return response.json()
     return None
 
-def search_movie(movie_name):
-  movie_name_lower = movie_name.lower()
-  result = movies[movies['title'].str.lower().str.contains(movie_name_lower)][['movieId', 'title']]
-  if len(result) > 0:
-    return result.to_dict('records')
-  else:
-    return None
-def movie_info_text(movie_name):
-    movie_inf = search_movie(movie_name)
-    if movie_inf:
-        for movie in movie_inf:
-            return movie['movieId']
+def get_best_match_movie_id(pattern, df):
+    regex = re.compile(pattern, re.IGNORECASE)
+    
+    matches = df[df['title'].apply(lambda title: bool(regex.search(title)))]
+    
+    if not matches.empty:
+        return matches.iloc[0]['movieId']  # Return the movieId of the best match
     else:
-        return 1
+        return None  
+
+
+
+
+
 @app.route("/recommend", methods=["GET"])
 def recommend():
     user_id = request.args.get("user_id", default="")
-    user_id = movie_info_text(user_id)
+    search_pattern = user_id  
+    movie_idx = get_best_match_movie_id(search_pattern, movies)
+    print(movie_idx)
+    if not movie_idx:
+        return jsonify({"error": "Movie not found"}), 404
+
 
     rating = request.args.get("rating", default=5.0, type=float)
 
-    user_dummy = [(user_id, rating)]
+    user_dummy = [(movie_idx, rating)]
     dummy_user_latent = np.zeros(32)
 
-    for _ in tqdm(range(10)):
+    for _ in tqdm(range(30)):
         dummy_user_bias = calculate_dummy_user_bias(
             user_dummy, _, dummy_user_latent)
         dummy_user_latent = update_user_latent_dummy(
@@ -121,7 +138,7 @@ def recommend():
 
     preds = [
         np.dot(dummy_user_latent.T,
-               movies_latent[:, i]) + (0.000000005 * movies_biases[i])
+               movies_latent[:, i]) + (0.05 * movies_biases[i])
         for i in range(len(idx_to_movie))
     ]
 
